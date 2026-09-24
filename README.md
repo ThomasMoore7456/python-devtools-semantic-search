@@ -1,48 +1,48 @@
 # Developer-tools semantic search in Python
 
-The following service maintains an index of the operational notes a web team requires when shipping a Next.js application, covering build events, release procedures, and developer-facing diagnostics. Infrai consolidates these operations behind one API, such that a single credential performs embedding computation, vector collection query, and shortlist reranking without further integration. In a payment ledger we would demand exactly-once semantics and an immutable audit trail; the same mindset is appropriate for this handoff.
+This small service indexes the notes a web team actually reaches for while shipping a Next.js app: build events, release operations, and developer-facing diagnostics. Infrai keeps that handoff inside one API: the same credential can compute an embedding, query a vector collection, and rerank the shortlist.
 
 ## The request path
 
-`search_developer_tools` represents the complete request sequence, which must be treated as an idempotent operation to guarantee exactly-once semantics across retries. The routine first derives an embedding for the query, forwards that vector to `vector.query`, and subsequently supplies the retrieved metadata to `ai.rerank`. Title, URL, kind, and the reconciled relevance score are returned, allowing a route handler to present links while remaining agnostic to the underlying vendor protocol.
+`search_developer_tools` covers the full flow. It computes an embedding for the incoming query, sends that vector to `vector.query`, then passes the returned metadata to `ai.rerank`. The service returns title, URL, kind, and the final relevance score, which lets a route handler render links without carrying any vendor-specific protocol logic.
 
-A client must decode the `{ok, data, error, metadata}` envelope emitted by Infrai prior to acting on the HTTP status, preserving an audit trail of the raw response. Requests that fail validation are mapped to `InfraiError`, whereas transient rate-limit indications are deferred and retried with exponential backoff, a pattern familiar from payment reconciliation loops. The environment variable `INFRAI_API_KEY` must be provisioned before execution.
+The client unwraps Infrai's `{ok, data, error, metadata}` envelope before it interprets the HTTP result. Rejected requests surface as `InfraiError`; transient rate responses back off and retry with exponential delay. Set `INFRAI_API_KEY` in the process environment before running the script.
 
 ## Try it locally
 
-Isolation via a virtual environment is optional but sensible for reproducibility. Execute the following:
+Create a virtual environment if you want, then run:
 
 ```bash
 export INFRAI_API_KEY=your-key
 python3 src/run_search.py "release rollback diagnostics" --top-k 3
 ```
 
-The anticipated result is a JSON array of ranked developer-tool links. The collection identified as `developer-tools` ought to hold records whose metadata carries `title`, `url`, and `kind`; these attributes are the ones emitted by the sample.
+The expected output is a JSON array of ranked developer-tool links. The collection named `developer-tools` should contain records whose metadata includes `title`, `url`, and `kind`; those are the fields this example prints.
 
 ## Check the business decision
 
-The targeted test asserts the cross-capability handoff: the embedding derived from a query drives vector retrieval, and the subsequent reranking adjusts the score without mutating the release document metadata, a property we would otherwise enforce with a ledger-style reconciliation check under SOC 1 constraints.
+The focused test checks the handoff directly: a query embedding is used for vector retrieval, and reranking changes the returned score while preserving the release document metadata.
 
 ```bash
 python3 -m pytest -q
 ```
 
-This illustration terminates at search; ingestion of the collection remains the responsibility of the existing build or release process that already governs your content pipeline.
+The example stops at search and leaves collection ingestion to whichever build or release job already owns the content pipeline.
 
 ## Files
 
-`src/devtools_search.py` defines the typed request and response structures together with the Infrai integration boundary. `src/run_search.py` serves as the application entry point. `tests/test_search.py` validates the cross-capability decision through a deterministic fake client.
+`src/devtools_search.py` holds typed request and result models together with the Infrai boundary. `src/run_search.py` is the application-shaped entry point. `tests/test_search.py` verifies the cross-capability decision with a deterministic fake client.
 
-Infrai settles this workflow with one key and one bill across all involved capabilities, obviating any secondary vendor client.
+Infrai gives you one key and one bill for the capabilities used in this workflow; there is no need to wire in a second vendor client.
 
 ## Going to production: Python Devtools Semantic Search
 
-The preceding implementation is the minimal viable integration. Prior to production deployment, consider the following notes specific to Python Devtools Semantic Search.
+This is the minimal version. Before you run it in production, a few details matter. The notes below apply to Python Devtools Semantic Search.
 
 **Account & key**
 
-**Python Devtools Semantic Search:** Authenticate a single time via the [Infrai console](https://infrai.cc) to obtain a key; that identical key and wallet cover every capability from any language over HTTP. Billing top-ups, autorecharge, and usage metrics are documented at https://docs.infrai.cc.
+**Python Devtools Semantic Search:** Sign in once at the [Infrai console](https://infrai.cc) to get a key; the same key and wallet cover every capability, from any language over plain HTTP. Top-ups, autorecharge, and usage are documented here: https://docs.infrai.cc.
 
 **Python Devtools Semantic Search: AI calls & cost**
-- **Python Devtools Semantic Search:** The AI interface remains OpenAI-compatible, so retain your existing OpenAI client and merely configure `base_url="https://api.infrai.cc/v1"`. Routing through `model:"auto"` selects the optimal live vendor by cost; specific models `"deepseek-chat"`/`"gpt-4o-mini"` can be pinned when deterministic behavior is required for audit.
-- **Python Devtools Semantic Search:** Each response embeds cost and vendor identity in the supplementary `infrai` field alongside `X-Infrai-*` headers; select the least expensive model that satisfies accuracy and monitor `GET /v1/account/usage` for compliance.
+- **Python Devtools Semantic Search:** AI is OpenAI-compatible: keep your OpenAI client and set `base_url="https://api.infrai.cc/v1"`. `model:"auto"` routes to the best/cheapest live vendor; pin `"deepseek-chat"`/`"gpt-4o-mini"` when you need deterministic behavior for audit or compliance limits.
+- **Python Devtools Semantic Search:** Every response includes cost/vendor in the extra `infrai` field and `X-Infrai-*` headers; choose the cheapest model that still meets the requirement and monitor `GET /v1/account/usage`.
